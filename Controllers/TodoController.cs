@@ -2,48 +2,57 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using AspNetCoreTodo.Models;
-using AspNetCoreTodo.Services;
 using Microsoft.AspNetCore.Mvc;
+using AspNetCoreTodo.Services;
+using AspNetCoreTodo.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 
 namespace AspNetCoreTodo.Controllers
 {
+    [Authorize]
     public class TodoController : Controller
     {
-        // this variable lets use the service from the Index action method
         private readonly ITodoItemService _todoItemService;
+        private readonly UserManager<ApplicationUser> _userManager;
 
-        // Constructor 
-        public TodoController(ITodoItemService todoItemService)
+        public TodoController(
+            ITodoItemService todoItemService,
+            UserManager<ApplicationUser> userManager)
         {
             _todoItemService = todoItemService;
+            _userManager = userManager;
         }
+
         public async Task<IActionResult> Index()
         {
-            //Get to-do items from database
-            var todoItems = await _todoItemService.GetIncompleteItemsAsync();
-            
-            //Put items into model
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser == null) return Challenge();
+
+            var todoItems = await _todoItemService.GetIncompleteItemsAsync(currentUser);
+
             var model = new TodoViewModel()
             {
                 Items = todoItems
             };
 
-            // Render view using the model
-            return View(model);            
+            return View(model);
         }
 
         public async Task<IActionResult> AddItem(NewTodoItem newItem)
         {
-            if(!ModelState.IsValid)
+            if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
 
-            var successful = await _todoItemService.AddItemAsync(newItem);
-            if(!successful)
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser == null) return Unauthorized();
+
+            var successful = await _todoItemService.AddItemAsync(newItem, currentUser);
+            if (!successful)
             {
-                return BadRequest(new { error = "Could not add item"});
+                return BadRequest(new { error = "Could not add item." });
             }
 
             return Ok();
@@ -53,9 +62,11 @@ namespace AspNetCoreTodo.Controllers
         {
             if (id == Guid.Empty) return BadRequest();
 
-            var successful = await _todoItemService.MarkDoneAsync(id);
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser == null) return Unauthorized();
 
-            if(!successful) return BadRequest();
+            var successful = await _todoItemService.MarkDoneAsync(id, currentUser);
+            if (!successful) return BadRequest();
 
             return Ok();
         }
